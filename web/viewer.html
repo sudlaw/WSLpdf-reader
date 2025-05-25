@@ -3,32 +3,30 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>PDF Annotate Tracker</title>
+  <title>PDF.js Annotate with Tracking</title>
   <style>
     #viewerContainer {
       height: 90vh;
-      overflow: scroll;
-      border: 1px solid #aaa;
+      overflow: auto;
+      border: 1px solid #ccc;
     }
     canvas {
-      border-bottom: 1px solid #ddd;
+      display: block;
+      margin: 0 auto 10px;
     }
   </style>
 </head>
 <body>
-  <h2>PDF Annotation Tracker</h2>
+  <h2>PDF Reader with Canvas Tracking</h2>
   <div id="viewerContainer"></div>
 
   <script src="js/pdf.js"></script>
   <script src="js/pdf-annotate.min.js"></script>
   <script src="js/xapiwrapper.min.js"></script>
-
   <script>
-    // config
-    const url = '../pdfs/sample.pdf';
     const actor = {
-      name: 'Student A',
-      mbox: 'mailto:studentA@example.com'
+      name: "Student A",
+      mbox: "mailto:student@example.com"
     };
 
     ADL.XAPIWrapper.changeConfig({
@@ -37,22 +35,26 @@
       actor: actor
     });
 
-    // load PDF
+    const url = '../pdfs/sample.pdf';
     const container = document.getElementById('viewerContainer');
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'js/pdf.worker.js';
 
-    pdfjsLib.getDocument(url).promise.then(function(pdfDoc_) {
-      for (let i = 1; i <= pdfDoc_.numPages; i++) {
-        pdfDoc_.getPage(i).then(function(page) {
-          const viewport = page.getViewport({ scale: 1.5 });
+    pdfjsLib.getDocument(url).promise.then(pdfDoc => {
+      for (let i = 1; i <= pdfDoc.numPages; i++) {
+        pdfDoc.getPage(i).then(page => {
+          const scale = 1.5;
+          const viewport = page.getViewport({ scale });
           const canvas = document.createElement('canvas');
-          canvas.width = viewport.width;
+          const context = canvas.getContext('2d');
           canvas.height = viewport.height;
+          canvas.width = viewport.width;
           canvas.dataset.pageNumber = i;
-          const ctx = canvas.getContext('2d');
-          page.render({ canvasContext: ctx, viewport: viewport });
 
-          canvas.addEventListener('click', function(e) {
+          page.render({ canvasContext: context, viewport }).promise.then(() => {
+            container.appendChild(canvas);
+          });
+
+          canvas.addEventListener('click', e => {
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
@@ -77,42 +79,37 @@
             });
           });
 
-          container.appendChild(canvas);
+          canvas.addEventListener('dblclick', e => {
+            const note = prompt("Type a note:");
+            if (!note) return;
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            ADL.XAPIWrapper.sendStatement({
+              actor: actor,
+              verb: {
+                id: "https://w3id.org/xapi/adb/verbs/annotated",
+                display: { "en-US": "annotated" }
+              },
+              object: {
+                id: url + "#page=" + i
+              },
+              result: {
+                response: note,
+                extensions: {
+                  page: i,
+                  x: Math.round(x),
+                  y: Math.round(y)
+                }
+              },
+              timestamp: new Date().toISOString()
+            });
+          });
         });
       }
-    });
-
-    // annotation event example
-    container.addEventListener('dblclick', function(e) {
-      const note = prompt('Enter annotation:');
-      if (!note) return;
-
-      const target = e.target.closest('canvas');
-      if (!target) return;
-      const rect = target.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      const page = target.dataset.pageNumber;
-
-      ADL.XAPIWrapper.sendStatement({
-        actor: actor,
-        verb: {
-          id: "https://w3id.org/xapi/adb/verbs/annotated",
-          display: { "en-US": "annotated" }
-        },
-        object: {
-          id: url + "#page=" + page
-        },
-        result: {
-          response: note,
-          extensions: {
-            page: parseInt(page),
-            x: Math.round(x),
-            y: Math.round(y)
-          }
-        },
-        timestamp: new Date().toISOString()
-      });
+    }).catch(err => {
+      container.innerHTML = "<p style='color:red;'>Failed to load PDF: " + err.message + "</p>";
     });
   </script>
 </body>

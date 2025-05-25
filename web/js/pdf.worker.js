@@ -1,1 +1,1 @@
-// PDF.worker.js placeholder
+// Actual pdf.worker.js dist would be here
