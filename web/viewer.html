@@ -2,37 +2,33 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>PDF Viewer with Tracking</title>
+  <meta charset="utf-8">
+  <title>PDF Annotate Tracker</title>
   <style>
-    #viewer-container {
-      width: 100%;
+    #viewerContainer {
       height: 90vh;
-      border: 1px solid #ccc;
       overflow: scroll;
+      border: 1px solid #aaa;
     }
-    .annotator {
-      position: absolute;
-      background-color: yellow;
-      opacity: 0.5;
+    canvas {
+      border-bottom: 1px solid #ddd;
     }
   </style>
 </head>
 <body>
-  <h1>PDF Viewer with Full xAPI Tracking</h1>
-  <iframe id="pdfFrame" src="../pdfs/sample.pdf" width="100%" height="600px"></iframe>
+  <h2>PDF Annotation Tracker</h2>
+  <div id="viewerContainer"></div>
 
-  <script src="../js/xapiwrapper.min.js"></script>
-  <script src="../js/pdf-annotate.min.js"></script>
+  <script src="js/pdf.js"></script>
+  <script src="js/pdf-annotate.min.js"></script>
+  <script src="js/xapiwrapper.min.js"></script>
+
   <script>
-    function getQueryParam(param) {
-      const url = new URL(window.location.href);
-      return url.searchParams.get(param);
-    }
-
+    // config
+    const url = '../pdfs/sample.pdf';
     const actor = {
-      name: getQueryParam('name') || 'Anonymous',
-      mbox: 'mailto:' + (getQueryParam('email') || 'anonymous@example.com')
+      name: 'Student A',
+      mbox: 'mailto:studentA@example.com'
     };
 
     ADL.XAPIWrapper.changeConfig({
@@ -41,99 +37,83 @@
       actor: actor
     });
 
-    const startTime = Date.now();
-    ADL.XAPIWrapper.sendStatement({
-      actor: actor,
-      verb: {
-        id: "http://adlnet.gov/expapi/verbs/launched",
-        display: { "en-US": "launched" }
-      },
-      object: { id: window.location.href },
-      timestamp: new Date().toISOString()
+    // load PDF
+    const container = document.getElementById('viewerContainer');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'js/pdf.worker.js';
+
+    pdfjsLib.getDocument(url).promise.then(function(pdfDoc_) {
+      for (let i = 1; i <= pdfDoc_.numPages; i++) {
+        pdfDoc_.getPage(i).then(function(page) {
+          const viewport = page.getViewport({ scale: 1.5 });
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          canvas.dataset.pageNumber = i;
+          const ctx = canvas.getContext('2d');
+          page.render({ canvasContext: ctx, viewport: viewport });
+
+          canvas.addEventListener('click', function(e) {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            ADL.XAPIWrapper.sendStatement({
+              actor: actor,
+              verb: {
+                id: "https://w3id.org/xapi/adb/verbs/clicked",
+                display: { "en-US": "clicked" }
+              },
+              object: {
+                id: url + "#page=" + i
+              },
+              result: {
+                extensions: {
+                  "page": i,
+                  "x": Math.round(x),
+                  "y": Math.round(y)
+                }
+              },
+              timestamp: new Date().toISOString()
+            });
+          });
+
+          container.appendChild(canvas);
+        });
+      }
     });
 
-    window.addEventListener("beforeunload", function () {
-      const endTime = Date.now();
-      const duration = (endTime - startTime) / 1000;
+    // annotation event example
+    container.addEventListener('dblclick', function(e) {
+      const note = prompt('Enter annotation:');
+      if (!note) return;
+
+      const target = e.target.closest('canvas');
+      if (!target) return;
+      const rect = target.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const page = target.dataset.pageNumber;
+
       ADL.XAPIWrapper.sendStatement({
         actor: actor,
         verb: {
-          id: "http://adlnet.gov/expapi/verbs/exited",
-          display: { "en-US": "exited" }
+          id: "https://w3id.org/xapi/adb/verbs/annotated",
+          display: { "en-US": "annotated" }
         },
-        object: { id: window.location.href },
+        object: {
+          id: url + "#page=" + page
+        },
         result: {
-          duration: "PT" + Math.round(duration) + "S"
+          response: note,
+          extensions: {
+            page: parseInt(page),
+            x: Math.round(x),
+            y: Math.round(y)
+          }
         },
         timestamp: new Date().toISOString()
       });
     });
-
-    // Mousemove for viewport tracking
-    let lastMouseTrack = 0;
-    document.addEventListener("mousemove", function (e) {
-      const now = Date.now();
-      if (now - lastMouseTrack > 5000) {
-        lastMouseTrack = now;
-        ADL.XAPIWrapper.sendStatement({
-          actor: actor,
-          verb: {
-            id: "https://w3id.org/xapi/adb/verbs/moved-mouse",
-            display: { "en-US": "moved mouse" }
-          },
-          object: { id: window.location.href },
-          result: {
-            extensions: {
-              x: e.clientX,
-              y: e.clientY
-            }
-          },
-          timestamp: new Date().toISOString()
-        });
-      }
-    });
-
-    // Highlighting
-    document.addEventListener("mouseup", function () {
-      const selectedText = window.getSelection().toString().trim();
-      if (selectedText.length > 5) {
-        ADL.XAPIWrapper.sendStatement({
-          actor: actor,
-          verb: {
-            id: "https://w3id.org/xapi/adb/verbs/highlighted",
-            display: { "en-US": "highlighted" }
-          },
-          object: { id: window.location.href },
-          result: { response: selectedText },
-          timestamp: new Date().toISOString()
-        });
-      }
-    });
-
-    // Annotation (prompt input simulation)
-    function promptAnnotation() {
-      const note = prompt("Type annotation:");
-      if (note && note.length > 0) {
-        ADL.XAPIWrapper.sendStatement({
-          actor: actor,
-          verb: {
-            id: "https://w3id.org/xapi/adb/verbs/annotated",
-            display: { "en-US": "annotated" }
-          },
-          object: { id: window.location.href },
-          result: { response: note },
-          timestamp: new Date().toISOString()
-        });
-      }
-    }
-
-    const btn = document.createElement("button");
-    btn.innerText = "Add Annotation";
-    btn.style.position = "fixed";
-    btn.style.bottom = "20px";
-    btn.style.right = "20px";
-    btn.onclick = promptAnnotation;
-    document.body.appendChild(btn);
   </script>
 </body>
 </html>
