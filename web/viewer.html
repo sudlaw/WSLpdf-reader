@@ -485,7 +485,11 @@ See https://github.com/adobe-type-tools/cmap-resources
 
 
 <script src="../js/xapiwrapper.min.js"></script>
+
+
+<script src="../js/xapiwrapper.min.js"></script>
 <script>
+  // 1. ดึงข้อมูล user จาก URL
   function getQueryParam(param) {
     const url = new URL(window.location.href);
     return url.searchParams.get(param);
@@ -502,6 +506,7 @@ See https://github.com/adobe-type-tools/cmap-resources
     actor: actor
   });
 
+  // 2. ส่งเมื่อเปิด PDF (launched)
   ADL.XAPIWrapper.sendStatement({
     actor: actor,
     verb: {
@@ -513,7 +518,136 @@ See https://github.com/adobe-type-tools/cmap-resources
     },
     timestamp: new Date().toISOString()
   });
+
+  // 3. Scroll tracking (25%, 50%, 75%, 100%)
+  let sentScrollLevels = new Set();
+  document.addEventListener("scroll", function () {
+    const doc = document.documentElement;
+    const scrollDepth = Math.round((doc.scrollTop + window.innerHeight) / doc.scrollHeight * 100);
+
+    [25, 50, 75, 100].forEach(level => {
+      if (scrollDepth >= level && !sentScrollLevels.has(level)) {
+        sentScrollLevels.add(level);
+        ADL.XAPIWrapper.sendStatement({
+          actor: actor,
+          verb: {
+            id: "https://w3id.org/xapi/dod-isd/verbs/scrolled",
+            display: { "en-US": "scrolled" }
+          },
+          object: {
+            id: window.location.href + "#scroll=" + level
+          },
+          result: {
+            extensions: {
+              "scrollDepth": level
+            }
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+  });
+
+  // 4. Page tracking
+  let lastPage = null;
+  const visitedPages = [];
+  document.addEventListener("pagesinit", function () {
+    PDFViewerApplication.eventBus.on("pagechanging", function (evt) {
+      const page = evt.pageNumber;
+      if (lastPage !== null && lastPage !== page) {
+        if (visitedPages.includes(page)) {
+          ADL.XAPIWrapper.sendStatement({
+            actor: actor,
+            verb: {
+              id: "https://w3id.org/xapi/adb/verbs/reread",
+              display: { "en-US": "reread" }
+            },
+            object: {
+              id: window.location.href + "#page=" + page
+            },
+            result: {
+              extensions: {
+                "page": page
+              }
+            },
+            timestamp: new Date().toISOString()
+          });
+        }
+        visitedPages.push(page);
+      }
+      lastPage = page;
+
+      ADL.XAPIWrapper.sendStatement({
+        actor: actor,
+        verb: {
+          id: "http://adlnet.gov/expapi/verbs/interacted",
+          display: { "en-US": "viewed page" }
+        },
+        object: {
+          id: window.location.href + "#page=" + page
+        },
+        result: {
+          extensions: {
+            "page": page
+          }
+        },
+        timestamp: new Date().toISOString()
+      });
+    });
+  });
+
+  // 5. Highlight tracking
+  document.addEventListener("mouseup", function () {
+    const selectedText = window.getSelection().toString().trim();
+    if (selectedText.length > 5) {
+      ADL.XAPIWrapper.sendStatement({
+        actor: actor,
+        verb: {
+          id: "https://w3id.org/xapi/adb/verbs/highlighted",
+          display: { "en-US": "highlighted" }
+        },
+        object: {
+          id: window.location.href
+        },
+        result: {
+          response: selectedText
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  // 6. Note-taking via prompt (optional)
+  function promptNote() {
+    const note = prompt("Enter your note:");
+    if (note && note.length > 0) {
+      ADL.XAPIWrapper.sendStatement({
+        actor: actor,
+        verb: {
+          id: "https://w3id.org/xapi/adb/verbs/noted",
+          display: { "en-US": "added note" }
+        },
+        object: {
+          id: window.location.href
+        },
+        result: {
+          response: note
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+  // สร้างปุ่มจดโน้ตแบบง่าย
+  const noteBtn = document.createElement("button");
+  noteBtn.textContent = "Add Note";
+  noteBtn.style.position = "fixed";
+  noteBtn.style.bottom = "20px";
+  noteBtn.style.right = "20px";
+  noteBtn.style.zIndex = "9999";
+  noteBtn.onclick = promptNote;
+  document.body.appendChild(noteBtn);
 </script>
+
 
 
   </body>
