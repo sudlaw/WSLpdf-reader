@@ -1,1 +1,0 @@
-// Actual pdf.worker.js dist would be here
