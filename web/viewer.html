@@ -482,5 +482,39 @@ See https://github.com/adobe-type-tools/cmap-resources
     <div id="printContainer"></div>
 
     <input type="file" id="fileInput" class="hidden">
+
+
+<script src="../js/xapiwrapper.min.js"></script>
+<script>
+  function getQueryParam(param) {
+    const url = new URL(window.location.href);
+    return url.searchParams.get(param);
+  }
+
+  const actor = {
+    name: getQueryParam('name') || 'Anonymous',
+    mbox: 'mailto:' + (getQueryParam('email') || 'anonymous@example.com')
+  };
+
+  ADL.XAPIWrapper.changeConfig({
+    endpoint: "https://sruproject.lrs.io/xapi/",
+    auth: "Basic " + btoa("4fe1cb98-7462-4981-9fac-e0d1e4a32b61:5453f299-f417-434d-8d00-43f51ff435a1"),
+    actor: actor
+  });
+
+  ADL.XAPIWrapper.sendStatement({
+    actor: actor,
+    verb: {
+      id: "http://adlnet.gov/expapi/verbs/launched",
+      display: { "en-US": "launched" }
+    },
+    object: {
+      id: window.location.href
+    },
+    timestamp: new Date().toISOString()
+  });
+</script>
+
+
   </body>
 </html>
